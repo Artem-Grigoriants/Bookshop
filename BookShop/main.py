@@ -1,63 +1,10 @@
-# from sqlalchemy import create_engine, select
-# from sqlalchemy.orm import sessionmaker
-
-
-# # Функция для получения информации о базе данных от пользователя
-# def get_database_config():
-#     db_user = input("Введите имя пользователя базы данных: ")
-#     db_password = input("Введите пароль базы данных: ")
-#     db_host = input("Введите хост базы данных (например, localhost): ")
-#     db_port = input("Введите порт базы данных (например, 5432): ")
-#     db_name = input("Введите имя базы данных: ")
-#     return db_user, db_password, db_host, db_port, db_name
-
-
-# # Получаем параметры подключения к базе данных
-# db_user, db_password, db_host, db_port, db_name = get_database_config()
-
-# # Создание подключения к базе данных
-# DATABASE_URL = f'postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}'
-# engine = create_engine(DATABASE_URL)
-
-# # Создание сессии
-# Session = sessionmaker(bind=engine)
-# session = Session()
-
-# # Получение имени или идентификатора издателя от пользователя
-# publisher_input = input("Введите имя или идентификатор издателя: ")
-
-# # Проверка, является ли входное значение числом (идентификатором)
-# if publisher_input.isdigit():
-#     publisher_id = int(publisher_input)
-#     publisher = session.query(Publisher).filter(Publisher.id == publisher_id).first()
-# else:
-#     publisher_name = publisher_input
-#     publisher = session.query(Publisher).filter(Publisher.name.ilike(f"%{publisher_name}%")).first()
-
-# # Если издатель найден
-# if publisher:
-#     print(f"Издатель: {publisher.name} (ID: {publisher.id})")
-
-#     # Получение магазинов, продающих книги этого издателя
-#     results = session.query(Shop).join(Stock).join(Book).filter(Book.id_publisher == publisher.id).all()
-
-#     if results:
-#         print("Магазины, продающие книги этого издателя:")
-#         for shop in results:
-#             print(f"- {shop.name} (ID: {shop.id})")
-#     else:
-#         print("Нет магазинов, продающих книги этого издателя.")
-# else:
-#     print("Издатель не найден.")
-
-# # Закрытие сессии
-# session.close()
-
 import sqlalchemy
 import sqlalchemy as sq
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
+from datetime import datetime
 
 Base = declarative_base()
+
 
 # Определение модели Publisher
 class Publisher(Base):
@@ -69,6 +16,7 @@ class Publisher(Base):
     # Связь с книгами
     books = relationship("Book", back_populates="publisher")
 
+
 # Определение модели Shop
 class Shop(Base):
     __tablename__ = 'shops'
@@ -78,6 +26,7 @@ class Shop(Base):
 
     # Связь со складами
     stocks = relationship("Stock", back_populates="shop")
+
 
 # Определение модели Book
 class Book(Base):
@@ -92,6 +41,7 @@ class Book(Base):
     # Связь со складами
     stocks = relationship("Stock", back_populates="book")
 
+
 # Определение модели Stock
 class Stock(Base):
     __tablename__ = 'stocks'
@@ -99,50 +49,104 @@ class Stock(Base):
     id = sq.Column(sq.Integer, primary_key=True)
     id_shop = sq.Column(sq.Integer, sq.ForeignKey('shops.id'), nullable=False)
     id_book = sq.Column(sq.Integer, sq.ForeignKey('books.id'), nullable=False)
+    count = sq.Column(sq.Integer, nullable=False)  # Добавлено поле count
 
     # Связь с магазином и книгой
     shop = relationship("Shop", back_populates="stocks")
     book = relationship("Book", back_populates="stocks")
 
+
+# Определение модели Sale
+class Sale(Base):
+    __tablename__ = 'sales'
+
+    id = sq.Column(sq.Integer, primary_key=True)
+    price = sq.Column(sq.Float, nullable=False)
+    date_sale = sq.Column(sq.DateTime, default=datetime.utcnow)
+    id_stock = sq.Column(sq.Integer, sq.ForeignKey('stocks.id'), nullable=False)
+    count = sq.Column(sq.Integer, nullable=False)
+
+    # Связь с складом
+    stock = relationship("Stock")
+
+
 def create_tables(engine):
+    # Удаление существующих таблиц
+    Base.metadata.drop_all(engine)
+    # Создание новых таблиц
     Base.metadata.create_all(engine)
+
 
 # Параметры подключения
 DSN = "postgresql://postgres:aeg19802402@localhost:5432/bookshop"
 engine = sqlalchemy.create_engine(DSN)
-create_tables(engine)
 
-# Создание сессии
-Session = sessionmaker(bind=engine)
-session = Session()
+try:
+    create_tables(engine)
 
-# Пример создания объектов
-publisher1 = Publisher(name="Издательство A")
-book1 = Book(title="Книга 1", publisher=publisher1)
-shop1 = Shop(name="Магазин 1")
-stock1 = Stock(shop=shop1, book=book1)
+    # Создание сессии
+    Session = sessionmaker(bind=engine)
+    session = Session()
 
-# Добавление объектов в сессию
-session.add(publisher1)
-session.add(book1)
-session.add(shop1)
-session.add(stock1)
-session.commit()  # Фиксируем изменения
+    # Пример создания объектов
+    publisher1 = Publisher(name="Пушкин")
+    book1 = Book(title="Капитанская дочка", publisher=publisher1)
+    book2 = Book(title="Руслан и Людмила", publisher=publisher1)
+    book3 = Book(title="Евгений Онегин", publisher=publisher1)
 
-# Запросы
-q = session.query(Publisher).join(Book).filter(Book.title == "Книга 1")
-print("Издатели, которые выпустили 'Книга 1':")
-for publisher in q.all():
-    print(publisher.id, publisher.name)
+    shop1 = Shop(name="Буквоед")
+    shop2 = Shop(name="Лабиринт")
+    shop3 = Shop(name="Книжный дом")
 
-# Обновление объектов
-session.query(Publisher).filter(Publisher.name == "Издательство A").update({"name": "Новое Издательство A"})
-session.commit()  # Фиксируем изменения
+    # Добавим книги и магазины в сессию
+    session.add_all([publisher1, book1, book2, book3, shop1, shop2, shop3])
+    session.commit()
 
-# Удаление объектов
-session.query(Stock).filter(Stock.id_book == book1.id).delete()
-session.commit()  # Фиксируем изменения
+    # Создание объектов Stock и Sale
+    stock1 = Stock(shop=shop1, book=book1, count=10)
+    stock2 = Stock(shop=shop1, book=book2, count=5)
+    stock3 = Stock(shop=shop2, book=book1, count=3)
+    stock4 = Stock(shop=shop3, book=book3, count=7)
 
-# Закрытие сессии
-session.close()
+    session.add_all([stock1, stock2, stock3, stock4])
+    session.commit()
 
+    # Добавление продаж
+    sale1 = Sale(price=600, id_stock=1, count=1, date_sale=datetime.strptime('2022-11-09', '%Y-%m-%d'))
+    sale2 = Sale(price=500, id_stock=2, count=1, date_sale=datetime.strptime('2022-11-08', '%Y-%m-%d'))
+    sale3 = Sale(price=600, id_stock=1, count=1, date_sale=datetime.strptime('2022-10-26', '%Y-%m-%d'))
+    sale4 = Sale(price=580, id_stock=3, count=1, date_sale=datetime.strptime('2022-11-05', '%Y-%m-%d'))
+    sale5 = Sale(price=490, id_stock=4, count=1, date_sale=datetime.strptime('2022-11-02', '%Y-%m-%d'))
+
+    session.add_all([sale1, sale2, sale3, sale4, sale5])
+    session.commit()
+
+
+    # Функция получения магазинов и продаж
+    def get_shops(user_input):
+        query = session.query(
+            Book.title,
+            Shop.name,
+            Sale.price,
+            Sale.date_sale
+        ).select_from(Shop) \
+            .join(Stock).join(Book).join(Sale)
+
+        if user_input.isdigit():  # Если введен ID
+            results = query.filter(Publisher.id == int(user_input)).all()
+        else:  # Если введено имя
+            results = query.join(Publisher).filter(Publisher.name == user_input).all()
+
+        for title, shop_name, price, date in results:
+            print(f"{title: <40} | {shop_name: <15} | {price: <8} | {date.strftime('%d-%m-%Y')}")
+
+
+    if __name__ == '__main__':
+        user_input = input("Введите ID или имя публициста: ")  # Запрос ввода от пользователя
+        get_shops(user_input)  # Вызов функции
+
+except Exception as e:
+    print(f"Произошла ошибка: {e}")
+    session.rollback()  # Откат в случае ошибки
+finally:
+    session.close()  # Закрытие сессии
